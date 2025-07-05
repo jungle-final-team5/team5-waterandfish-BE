@@ -17,7 +17,7 @@ router = APIRouter(prefix="/learning", tags=["learning"])
 async def learning_deprecated():
     """이 엔드포인트는 더 이상 사용되지 않습니다."""
     return {
-        "message": "이 API는 더 이상 사용되지 않습니다. 새로운 RESTful API 구조를 사용해주세요.",
+        "message": "이 API는 더 이상 사용되지 않습니다. 새로운 RESTful API 구조를 사용해주세요!!",
         "new_endpoints": {
             "categories": "/categories",
             "chapters": "/chapters", 
