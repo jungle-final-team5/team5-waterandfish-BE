@@ -1,71 +1,31 @@
-# Python
-__pycache__/
+# 대용량/불필요 폴더 및 파일 제외
+public/animations/
+public/models/
+public/model-info/
+tests/
+.git/
+.vscode/
+.DS_Store
 *.pyc
 *.pyo
 *.pyd
-.Python
-*.so
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Virtual environments
+*.db
+*.sqlite3
+*.log
+db_data/
+mongo_data/
+.env
+.env.production
 venv/
-.venv/
-env/
-# .env
-
-# Git
-.git/
-.gitignore
-
-# OS
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
+.python-version
+README.md
+.ipynb_checkpoints/
+htmlcov/
+.coverage
+.tox/
 *.swp
 *.swo
-
-# Logs
-*.log
-logs/
-
-# Data and models
-*.pt
-*.pth
-*.h5
-*.onnx
-*.ckpt
-*.npz
-*.npy
-*.csv
-data/
-models/
-notebooks/
-
-# Tests
-tests/
-test_*
-*_test.py
-
-# Documentation
-docs/
-*.md
-!README.md
-
-# CI/CD
-.github/
-.gitlab-ci.yml
-.travis.yml
-
-# Docker
-Dockerfile*
-docker-compose*
-.dockerignore
-
-# Environment files
-.env*
-!.env.production
+poetry.lock
+.poetry/
+src/.DS_Store
+src/__pycache__/
