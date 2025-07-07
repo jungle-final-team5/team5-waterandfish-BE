@@ -1,4 +1,4 @@
-name: Deploy Backend to EC2 (No Appleboy)
+name: Deploy Backend to EC2 (ECR)
 
 on:
   push:
@@ -11,59 +11,74 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. 소스코드 체크아웃
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # 2. .env.production 파일 생성 (Secrets에서)
-      - name: Create .env.production
-        run: |
-          echo "MONGODB_URL=${{ secrets.MONGODB_URL }}" >> .env.production
-          echo "DATABASE_NAME=${{ secrets.DATABASE_NAME }}" >> .env.production
-          echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" >> .env.production
-          echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" >> .env.production
-          echo "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" >> .env.production
-          echo "KAKAO_CLIENT_ID=${{ secrets.KAKAO_CLIENT_ID }}" >> .env.production
-          echo "KAKAO_CLIENT_SECRET=${{ secrets.KAKAO_CLIENT_SECRET }}" >> .env.production
-          echo "ACCESS_TOKEN_EXPIRE_MINUTES=60" >> .env.production
-          echo "ALGORITHM=HS256" >> .env.production
-          echo "GOOGLE_REDIRECT_URI=${{ secrets.GOOGLE_REDIRECT_URI }}" >> .env.production
-          echo "KAKAO_REDIRECT_URI=${{ secrets.KAKAO_REDIRECT_URI }}" >> .env.production
-          echo "CORS_ORIGINS=[\"http://13.209.142.150\"]" >> .env.production
-          echo "FRONTEND_URL=${{ secrets.FRONTEND_URL }}" >> .env.production
-          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> .env.production
-          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env.production
-          echo "AWS_REGION=ap-northeast-2" >> .env.production
-
-      # 3. AWS 인증 정보 설정 (ECR 접근을 위해 필요)
+      # AWS 인증 정보 설정 (ECR 접근)
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-northeast-2
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      # 4. ECR에 Docker 로그인
+      # ECR 로그인
       - name: Login to Amazon ECR
         run: |
-          aws ecr get-login-password --region ap-northeast-2 | \
-          docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
+          | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
 
-      # 5. Docker 이미지 빌드
-      - name: Build Docker image
+      # Docker 이미지 빌드 & 푸시
+      - name: Build and push Docker image
         run: |
-          docker build -t waterandfish-backend:latest .
+          docker build -t ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }} .
+          docker push ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
 
-      # 6. ECR에 push할 태그 추가
-      - name: Tag Docker image for ECR
+      # SSH 키 저장
+      - name: Write SSH key
         run: |
-          docker tag waterandfish-backend:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com/waterandfish-backend:latest
+          echo "${{ secrets.EC2_SSH_KEY }}" > key.pem
+          sed -i 's/\\n/\n/g' key.pem
+          chmod 600 key.pem
 
-      # 7. Docker 이미지를 ECR에 push
-      - name: Push Docker image to ECR
+      # EC2에서 ECR pull & 컨테이너 실행
+      - name: Deploy to EC2 via SSH
         run: |
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com/waterandfish-backend:latest
-
-# 이 워크플로우는 main 브랜치에 push/PR될 때마다 실행되며,
-# 백엔드 Docker 이미지를 빌드해서 ECR에 업로드합니다.
-# EC2 등에서 이미지를 pull해서 배포하는 방식으로 연동하면 됩니다.
+          ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+          # awscli 설치 (최초 1회만 필요)
+          if ! command -v aws &> /dev/null; then
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
+          fi
+          # docker 설치 (최초 1회만 필요)
+          if ! command -v docker &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y docker.io
+            sudo usermod -aG docker $USER
+          fi
+          # ECR 로그인
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
+          | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+          # 컨테이너 재시작
+          docker pull ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+          docker stop backend || true
+          docker rm backend || true
+          docker run -d --name backend -p 8000:8000 \
+            -e MONGODB_URL=${{ secrets.MONGODB_URL }} \
+            -e DATABASE_NAME=${{ secrets.DATABASE_NAME }} \
+            -e SECRET_KEY=${{ secrets.SECRET_KEY }} \
+            -e GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }} \
+            -e GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }} \
+            -e KAKAO_CLIENT_ID=${{ secrets.KAKAO_CLIENT_ID }} \
+            -e KAKAO_CLIENT_SECRET=${{ secrets.KAKAO_CLIENT_SECRET }} \
+            -e ACCESS_TOKEN_EXPIRE_MINUTES=${{ secrets.ACCESS_TOKEN_EXPIRE_MINUTES }} \
+            -e ALGORITHM=${{ secrets.ALGORITHM }} \
+            -e GOOGLE_REDIRECT_URI=${{ secrets.GOOGLE_REDIRECT_URI }} \
+            -e KAKAO_REDIRECT_URI=${{ secrets.KAKAO_REDIRECT_URI }} \
+            -e CORS_ORIGINS=${{ secrets.CORS_ORIGINS }} \
+            -e FRONTEND_URL=${{ secrets.FRONTEND_URL }} \
+            -e AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
+            -e AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
+            -e AWS_REGION=${{ secrets.AWS_REGION }} \
+            ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+          EOF
