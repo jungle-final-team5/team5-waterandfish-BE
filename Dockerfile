@@ -37,7 +37,8 @@ COPY src/ src/
 FROM python:3.11-slim
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends libgl1 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends libgl1 && rm -rf /var/lib/apt/lists/* && \
+    apt-get install libglib2.0-0 -y
 
 # venv 통째로 복사 (시스템 툴·Poetry는 제외)
 ENV VENV_PATH=/opt/venv
