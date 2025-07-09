@@ -49,13 +49,13 @@ class SignClassifierWebSocketServer:
             self.frame_skip_rate = 1
             self.prediction_interval = max(5, prediction_interval - 3)  # 더 자주 예측
             self.debug_update_interval = 5  # 더 자주 업데이트
-            logger.info(f"🎯 정확도 모드 설정: 프레임스킵={self.frame_skip_rate}, 예측간격={self.prediction_interval}")
+            logger.info(f" 정확도 모드 설정: 프레임스킵={self.frame_skip_rate}, 예측간격={self.prediction_interval}")
         elif self.aggressive_mode:
             # 공격적 모드: 더 적게 처리
             self.frame_skip_rate = frame_skip + 2  # 더 많이 스킵
             self.prediction_interval = prediction_interval + 5  # 더 적게 예측
             self.debug_update_interval = 15  # 더 적게 업데이트
-            logger.info(f"🔥 공격적 모드 설정: 프레임스킵={self.frame_skip_rate}, 예측간격={self.prediction_interval}")
+            logger.info(f" 공격적 모드 설정: 프레임스킵={self.frame_skip_rate}, 예측간격={self.prediction_interval}")
         
         # 디버그 렌더링 최적화 설정
         self.debug_frame_width = 480  # 디버그 화면 너비 (더 작게)
@@ -89,14 +89,14 @@ class SignClassifierWebSocketServer:
         # 먼저 S3에서 시도
         
         try:
-            logger.info(f"📁 S3에서 모델 파일 다운로드 중: {model_path}")
+            logger.info(f" S3에서 모델 파일 다운로드 중: {model_path}")
             
             # S3에서 모델 파일 다운로드
             self.MODEL_SAVE_PATH = s3_utils.download_file_from_s3(model_path)
             
-            logger.info(f"✅ S3 모델 파일 다운로드 완료: {self.MODEL_SAVE_PATH}")
+            logger.info(f" S3 모델 파일 다운로드 완료: {self.MODEL_SAVE_PATH}")
         except Exception as e:
-            logger.warning(f"⚠️ S3 다운로드 실패, 로컬 경로로 시도: {e}")
+            logger.warning(f" S3 다운로드 실패, 로컬 경로로 시도: {e}")
             # 로컬 경로 처리
             # model_path가 이미 "models/"로 시작하는 경우 중복 방지
             if model_path.startswith("models/"):
@@ -113,16 +113,16 @@ class SignClassifierWebSocketServer:
         self.ACTIONS = self.model_info["labels"]
         self.QUIZ_LABELS = [a for a in self.ACTIONS if a != "None"]
         
-        logger.info(f"📋 로드된 라벨: {self.ACTIONS}")
-        logger.info(f"🎯 퀴즈 라벨: {self.QUIZ_LABELS}")
-        logger.info(f"📊 원본 모델 경로: {self.model_info['model_path']}")
-        logger.info(f"📊 변환된 모델 경로: {self.MODEL_SAVE_PATH}")
-        logger.info(f"⏱️ 시퀀스 길이: {self.MAX_SEQ_LENGTH}")
-        logger.info(f"🚀 성능 설정: 프레임 스킵={self.frame_skip_rate}, 예측 간격={self.prediction_interval}")
+        logger.info(f" 로드된 라벨: {self.ACTIONS}")
+        logger.info(f" 퀴즈 라벨: {self.QUIZ_LABELS}")
+        logger.info(f" 원본 모델 경로: {self.model_info['model_path']}")
+        logger.info(f" 변환된 모델 경로: {self.MODEL_SAVE_PATH}")
+        logger.info(f" 시퀀스 길이: {self.MAX_SEQ_LENGTH}")
+        logger.info(f" 성능 설정: 프레임 스킵={self.frame_skip_rate}, 예측 간격={self.prediction_interval}")
         
         # 모델 파일 존재 확인
         if not os.path.exists(self.MODEL_SAVE_PATH):
-            logger.error(f"❌ 모델 파일을 찾을 수 없습니다: {self.MODEL_SAVE_PATH}")
+            logger.error(f" 모델 파일을 찾을 수 없습니다: {self.MODEL_SAVE_PATH}")
             raise FileNotFoundError(f"모델 파일을 찾을 수 없습니다: {self.MODEL_SAVE_PATH}")
         
         logger.info(f"✅ 모델 파일 존재 확인: {self.MODEL_SAVE_PATH}")
@@ -134,15 +134,15 @@ class SignClassifierWebSocketServer:
         if self.aggressive_mode:
             detection_confidence = 0.9  # 매우 높은 임계값 (속도 우선)
             tracking_confidence = 0.8   # 매우 높은 추적 신뢰도
-            logger.info("🔥 공격적 최적화 모드 활성화 - 속도 우선")
+            logger.info(" 공격적 최적화 모드 활성화 - 속도 우선")
         elif self.accuracy_mode:
             detection_confidence = 0.5  # 낮은 임계값 (정확도 우선)
             tracking_confidence = 0.3   # 낮은 추적 신뢰도 (정확도 우선)
-            logger.info("🎯 정확도 우선 모드 활성화 - 정확도 우선")
+            logger.info(" 정확도 우선 모드 활성화 - 정확도 우선")
         else:
             detection_confidence = 0.6  # 균형 설정 (기본값)
             tracking_confidence = 0.5   # 균형 추적 신뢰도
-            logger.info("⚖️ 균형 최적화 모드 - 정확도와 성능의 균형")
+            logger.info(" 균형 최적화 모드 - 정확도와 성능의 균형")
         
         self.holistic = self.mp_holistic.Holistic(
             min_detection_confidence=detection_confidence,
@@ -161,7 +161,7 @@ class SignClassifierWebSocketServer:
         # 모델 로드
         try:
             self.model = tf.keras.models.load_model(self.MODEL_SAVE_PATH)
-            logger.info(f"✅ 모델 로드 성공: {self.MODEL_SAVE_PATH}")
+            logger.info(f" 모델 로드 성공: {self.MODEL_SAVE_PATH}")
             
             # TensorFlow 성능 최적화 설정
             tf.config.optimizer.set_jit(True)  # XLA JIT 컴파일 활성화
@@ -169,10 +169,10 @@ class SignClassifierWebSocketServer:
             # 모델 warming up (첫 번째 예측 시 느린 속도 방지)
             dummy_input = np.zeros((1, self.MAX_SEQ_LENGTH, 675))
             _ = self.model.predict(dummy_input, verbose=0)
-            logger.info("🔥 모델 warming up 완료")
+            logger.info(" 모델 warming up 완료")
             
         except Exception as e:
-            logger.error(f"❌ 모델 로딩 실패: {e}")
+            logger.error(f" 모델 로딩 실패: {e}")
             raise
         
         # 시퀀스 버퍼 (클라이언트별로 관리)
@@ -197,12 +197,12 @@ class SignClassifierWebSocketServer:
         try:
             # S3 URL인지 확인
             if model_info_url.startswith('s3://'):
-                logger.info(f"📁 S3에서 모델 정보 파일 다운로드 중: {model_info_url}")
+                logger.info(f" S3에서 모델 정보 파일 다운로드 중: {model_info_url}")
                 
                 # S3에서 파일 다운로드
                 local_path = s3_utils.download_file_from_s3(model_info_url)
                 model_info_url = local_path
-                logger.info(f"✅ S3 파일 다운로드 완료: {local_path}")
+                logger.info(f" S3 파일 다운로드 완료: {local_path}")
             else:
                 # 로컬 파일 경로 처리
                 # 현재 스크립트 파일의 위치를 기준으로 프로젝트 루트 계산
@@ -222,17 +222,17 @@ class SignClassifierWebSocketServer:
                 # 경로 정규화
                 model_info_url = os.path.normpath(model_info_url)
             
-            logger.info(f"📁 모델 정보 파일 경로: {model_info_url}")
+            logger.info(f" 모델 정보 파일 경로: {model_info_url}")
             
             # 파일 존재 여부 확인 (S3에서 다운로드한 경우는 이미 존재함)
             if not model_info_url.startswith('s3://') and not os.path.exists(model_info_url):
-                logger.error(f"❌ 모델 정보 파일을 찾을 수 없습니다: {model_info_url}")
+                logger.error(f" 모델 정보 파일을 찾을 수 없습니다: {model_info_url}")
                 return None
             
             with open(model_info_url, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
-            logger.error(f"❌ 모델 정보 파일 로드 실패: {e}")
+            logger.error(f" 모델 정보 파일 로드 실패: {e}")
             return None
     
     def get_client_id(self, websocket):
@@ -414,7 +414,7 @@ class SignClassifierWebSocketServer:
         
         # 성능 프로파일링 출력 (20ms 이상 걸리는 경우만)
         if self.enable_profiling and total_time > 0.02:
-            logger.info(f"🎯 상대좌표 변환 성능:")
+            logger.info(f" 상대좌표 변환 성능:")
             logger.info(f"   전체: {total_time*1000:.1f}ms")
             logger.info(f"   어깨계산: {shoulder_calc_time*1000:.1f}ms")
             logger.info(f"   포즈계산: {pose_calc_time*1000:.1f}ms")
@@ -473,7 +473,7 @@ class SignClassifierWebSocketServer:
         
         # 성능 프로파일링 출력 (50ms 이상 걸리는 경우만)
         if self.enable_profiling and total_time > 0.05:
-            logger.info(f"🔬 랜드마크 전처리 성능:")
+            logger.info(f" 랜드마크 전처리 성능:")
             logger.info(f"   전체: {total_time*1000:.1f}ms")
             logger.info(f"   상대좌표: {relative_time*1000:.1f}ms")
             logger.info(f"   프레임처리: {processing_time*1000:.1f}ms")
@@ -488,7 +488,7 @@ class SignClassifierWebSocketServer:
         
         # 로그 출력 주기 제한 (너무 빈번한 로그 방지)
         if current_time - self.last_log_time >= self.log_interval:
-            logger.info(f"🎯 [{client_id}] 예측: {result['prediction']} (신뢰도: {result['confidence']:.3f})")
+            logger.info(f" [{client_id}] 예측: {result['prediction']} (신뢰도: {result['confidence']:.3f})")
 
             message = json.dumps({
                 "type": "classification_log",
@@ -666,10 +666,10 @@ class SignClassifierWebSocketServer:
             if self.enable_profiling and total_time > 0.05:  # 50ms 이상 걸리는 경우만 로그
                 if self.aggressive_mode:
                     # 공격적 모드에서는 간단한 프로파일링
-                    logger.info(f"⚡ [{client_id}] 프레임 #{self.performance_stats['total_frames']}: {total_time*1000:.1f}ms (MP:{mediapipe_time*1000:.1f}ms)")
+                    logger.info(f" [{client_id}] 프레임 #{self.performance_stats['total_frames']}: {total_time*1000:.1f}ms (MP:{mediapipe_time*1000:.1f}ms)")
                 else:
                     # 기본 프로파일링
-                    logger.info(f"⚡ [{client_id}] 성능 프로파일 (프레임 #{self.performance_stats['total_frames']}):")
+                    logger.info(f" [{client_id}] 성능 프로파일 (프레임 #{self.performance_stats['total_frames']}):")
                     logger.info(f"   전체: {total_time*1000:.1f}ms")
                     logger.info(f"   리사이즈: {resize_time*1000:.1f}ms")
                     logger.info(f"   디버그: {debug_time*1000:.1f}ms")
@@ -677,11 +677,11 @@ class SignClassifierWebSocketServer:
                     if should_predict:
                         logger.info(f"   전처리: {preprocessing_time*1000:.1f}ms")
                         logger.info(f"   예측: {prediction_time*1000:.1f}ms")
-                    logger.info(f"   🔥 병목: {self.performance_stats['bottleneck_component']}")
+                    logger.info(f"    병목: {self.performance_stats['bottleneck_component']}")
                 
                 # 100프레임마다 성능 요약 출력
                 if self.performance_stats['total_frames'] % 100 == 0:
-                    logger.info(f"📊 성능 요약 (100프레임 평균):")
+                    logger.info(f" 성능 요약 (100프레임 평균):")
                     logger.info(f"   평균 MediaPipe: {self.performance_stats['avg_mediapipe_time']*1000:.1f}ms")
                     logger.info(f"   평균 전처리: {self.performance_stats['avg_preprocessing_time']*1000:.1f}ms")
                     logger.info(f"   평균 예측: {self.performance_stats['avg_prediction_time']*1000:.1f}ms")
@@ -690,7 +690,7 @@ class SignClassifierWebSocketServer:
             
             # 디버그 모드에서는 간단한 성능 정보만 출력
             elif self.debug_video and total_time > 0.1:  # 100ms 이상 걸리는 경우만 로그
-                logger.info(f"⚡ [{client_id}] 느린 프레임 감지: {total_time*1000:.1f}ms")
+                logger.info(f" [{client_id}] 느린 프레임 감지: {total_time*1000:.1f}ms")
             
             return result
                 
@@ -700,13 +700,13 @@ class SignClassifierWebSocketServer:
         finally:
             self.client_states[client_id]["is_processing"] = False
     
-    async def handle_client(self, websocket, path):
+    async def handle_client(self, websocket):
         """클라이언트 연결 처리"""
         client_id = self.get_client_id(websocket)
         self.clients.add(websocket)
         self.initialize_client(client_id)
         
-        logger.info(f"🟢 client connected: {client_id}")
+        logger.info(f" client connected: {client_id}")
         
         try:
             async for message in websocket:
@@ -773,7 +773,7 @@ class SignClassifierWebSocketServer:
                         pass  # 연결이 끊어진 경우 무시
                     
         except websockets.exceptions.ConnectionClosed:
-            logger.info(f"🔴 클라이언트 연결 종료: {client_id}")
+            logger.info(f" 클라이언트 연결 종료: {client_id}")
         except Exception as e:
             logger.error(f"클라이언트 처리 중 오류 [{client_id}]: {e}")
         finally:
@@ -787,15 +787,15 @@ class SignClassifierWebSocketServer:
             self.host, 
             self.port
         )
-        logger.info(f"🚀 수어 분류 WebSocket 서버 시작: ws://{self.host}:{self.port}")
-        logger.info(f"📊 서버 정보:")
+        logger.info(f" 수어 분류 WebSocket 서버 시작: ws://{self.host}:{self.port}")
+        logger.info(f" 서버 정보:")
         logger.info(f"   - 호스트: {self.host}")
         logger.info(f"   - 포트: {self.port}")
         logger.info(f"   - 모델: {self.MODEL_SAVE_PATH}")
         logger.info(f"   - 라벨 수: {len(self.ACTIONS)}")
         logger.info(f"   - 시퀀스 길이: {self.MAX_SEQ_LENGTH}")
         logger.info(f"   - 디버그 모드: {self.debug_video}")
-        logger.info(f"⚡ 성능 최적화 설정:")
+        logger.info(f" 성능 최적화 설정:")
         logger.info(f"   - 프레임 스킵: {self.frame_skip_rate}프레임 중 1프레임 처리")
         logger.info(f"   - 예측 간격: {self.prediction_interval}프레임마다 예측")
         logger.info(f"   - 디버그 업데이트: {self.debug_update_interval}프레임마다 화면 업데이트")
@@ -803,17 +803,17 @@ class SignClassifierWebSocketServer:
         logger.info(f"   - 프레임 크기 제한: {self.max_frame_width}px")
         logger.info(f"   - TensorFlow XLA JIT: 활성화")
         logger.info(f"   - Performance profiling: {self.enable_profiling}")
-        logger.info(f"🏁 Starting server with optimized settings...")
+        logger.info(f" Starting server with optimized settings...")
         
         try:
             await server.wait_closed()
         except KeyboardInterrupt:
-            logger.info("🛑 서버 종료 중...")
+            logger.info(" 서버 종료 중...")
         finally:
             # 디버그 모드인 경우 모든 OpenCV 윈도우 정리
             if self.debug_video:
                 cv2.destroyAllWindows()
-                logger.info("🎥 디버그 윈도우 정리 완료")
+                logger.info(" 디버그 윈도우 정리 완료")
 
 def setup_logging(log_level='INFO'):
     """로깅 설정을 동적으로 구성"""
@@ -890,19 +890,19 @@ def main():
     
     # 로그가 꺼져있지 않은 경우에만 시작 메시지 출력
     if log_level.upper() != 'OFF':
-        print(f"🚀 Starting sign classifier WebSocket server...")
-        print(f"📁 Model data URL: {model_info_url}")
-        print(f"🔌 Port: {port}")
-        print(f"📊 Log level: {log_level}")
-        print(f"🎥 Debug video: {debug_video}")
-        print(f"⚡ Performance settings:")
+        print(f" Starting sign classifier WebSocket server...")
+        print(f" Model data URL: {model_info_url}")
+        print(f" Port: {port}")
+        print(f" Log level: {log_level}")
+        print(f" Debug video: {debug_video}")
+        print(f" Performance settings:")
         print(f"   - Frame skip: {frame_skip}")
         print(f"   - Prediction interval: {prediction_interval}")
         print(f"   - Max frame width: {max_frame_width}")
         print(f"   - Performance profiling: {enable_profiling}")
         print(f"   - Aggressive mode: {aggressive_mode}")
         print(f"   - Accuracy mode: {accuracy_mode}")
-        print(f"🏁 Starting server with optimized settings...")
+        print(f" Starting server with optimized settings...")
     
     # 현재 스크립트 파일의 위치를 기준으로 프로젝트 루트 계산
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -915,9 +915,9 @@ def main():
         # 파일명만 전달된 경우
         model_info_url_processed = f"s3://waterandfish-s3/model-info/{model_info_url}"
     
-    logger.info(f"📁 원본 모델 데이터 URL: {model_info_url}")
-    logger.info(f"📁 처리된 모델 데이터 경로: {model_info_url_processed}")
-    logger.info(f"🔌 포트: {port}")
+    logger.info(f" 원본 모델 데이터 URL: {model_info_url}")
+    logger.info(f" 처리된 모델 데이터 경로: {model_info_url_processed}")
+    logger.info(f" 포트: {port}")
     
     # S3 URL인지 확인
     if model_info_url_processed.startswith('s3://'):
@@ -944,7 +944,7 @@ def main():
     
     # 디버그 모드 활성화 시 알림
     if debug_video:
-        logger.info("🎥 비디오 디버그 모드 활성화 - 수신된 프레임을 실시간으로 표시합니다")
+        logger.info(" 비디오 디버그 모드 활성화 - 수신된 프레임을 실시간으로 표시합니다")
         logger.info("   - ESC 키를 눌러 디버그 모드를 종료할 수 있습니다")
         logger.info("   - 각 클라이언트별로 별도의 창이 표시됩니다")
     

@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     KAKAO_REDIRECT_URI: str = Field("", env="KAKAO_REDIRECT_URI")
 
     # MongoDB 설정
-    MONGODB_URL: str = Field("", env="MONGODB_URL")
+    MONGODB_URL: str = Field("mongodb://localhost:27017/mydb", env="MONGODB_URL")
     DATABASE_NAME: str = Field("waterandfish", env="DATABASE_NAME")
     
     # AWS S3 설정

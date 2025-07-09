@@ -63,7 +63,7 @@ class WebRTCSignalingServer:
         """클라이언트 ID 생성"""
         return f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
     
-    async def handle_client(self, websocket: websockets.WebSocketServerProtocol, path: str):
+    async def handle_client(self, websocket: websockets.WebSocketServerProtocol):
         """클라이언트 연결 처리"""
         client_id = self.get_client_id(websocket)
         client = WebRTCClient(websocket=websocket, client_id=client_id)
