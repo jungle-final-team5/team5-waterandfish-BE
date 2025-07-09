@@ -170,7 +170,7 @@ async def delete_chapter(
         )
     
     # 연관된 레슨도 함께 삭제
-    await db.Lessons.delete_many({"chapter_id": obj_id})
+    # await db.Lessons.delete_many({"chapter_id": obj_id})
     
     result = await db.Chapters.delete_one({"_id": obj_id})
     

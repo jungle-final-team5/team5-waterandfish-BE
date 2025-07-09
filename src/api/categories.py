@@ -274,7 +274,7 @@ async def delete_category(
     chapter_ids = [chapter["_id"] for chapter in chapters]
     
     if chapter_ids:
-        await db.Lessons.delete_many({"chapter_id": {"$in": chapter_ids}})
+        # await db.Lessons.delete_many({"chapter_id": {"$in": chapter_ids}})
         await db.Chapters.delete_many({"category_id": obj_id})
     
     result = await db.Category.delete_one({"_id": obj_id})
