@@ -191,7 +191,15 @@ class SignClassifierWebSocketServer:
         
         # 시퀀스 관리 (클라이언트별로 관리)
         self.client_sequence_managers = {}  # {client_id: {last_prediction, same_count}}
-    
+    async def shutdown_if_idle(self, delay: float = 5.0):
+        await asyncio.sleep(delay)
+        if not self.clients:
+            logger.info("클라이언트 없음. 서버 종료를 진행합니다.")
+            await self.shutdown_server()
+
+    async def shutdown_server(self):
+        logger.info("모델 서버 리소스를 정리하고 프로세스를 종료합니다.")
+        os._exit(0)
     def load_model_info(self, model_info_url):
         """모델 정보 파일을 로드합니다."""
         try:
@@ -699,7 +707,13 @@ class SignClassifierWebSocketServer:
             return None
         finally:
             self.client_states[client_id]["is_processing"] = False
-    
+    async def monitor_shutdown(self, check_interval: float = 5.0):
+        """클라이언트가 모두 종료되었는지 주기적으로 확인하고 서버 종료"""
+        while True:
+            await asyncio.sleep(check_interval)
+            if not self.clients:  # 클라이언트가 아무도 없을 때
+                logger.info("모든 클라이언트가 종료됨. 서버를 종료합니다.")
+                await self.shutdown_server()
     async def handle_client(self, websocket):
         """클라이언트 연결 처리"""
         client_id = self.get_client_id(websocket)
@@ -779,6 +793,10 @@ class SignClassifierWebSocketServer:
         finally:
             self.clients.remove(websocket)
             self.cleanup_client(client_id)
+
+            if not self.clients:
+                logger.info("모든 클라이언트가 연결 종료됨. 서버 종료 예약.")
+                asyncio.create_task(self.shutdown_if_idle())
     
     async def run_server(self):
         """WebSocket 서버 실행"""
@@ -804,7 +822,7 @@ class SignClassifierWebSocketServer:
         logger.info(f"   - TensorFlow XLA JIT: 활성화")
         logger.info(f"   - Performance profiling: {self.enable_profiling}")
         logger.info(f" Starting server with optimized settings...")
-        
+        asyncio.create_task(self.monitor_shutdown())
         try:
             await server.wait_closed()
         except KeyboardInterrupt:
