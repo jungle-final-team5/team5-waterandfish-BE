@@ -707,6 +707,7 @@ class SignClassifierWebSocketServer:
             return None
         finally:
             self.client_states[client_id]["is_processing"] = False
+
     async def monitor_shutdown(self, check_interval: float = 5.0):
         """클라이언트가 모두 종료되었는지 주기적으로 확인하고 서버 종료"""
         while True:
@@ -714,6 +715,7 @@ class SignClassifierWebSocketServer:
             if not self.clients:  # 클라이언트가 아무도 없을 때
                 logger.info("모든 클라이언트가 종료됨. 서버를 종료합니다.")
                 await self.shutdown_server()
+                
     async def handle_client(self, websocket):
         """클라이언트 연결 처리"""
         client_id = self.get_client_id(websocket)
