@@ -85,29 +85,33 @@ async def initialize_chapter_progress(
         "user_id": ObjectId(user_id),
         "chapter_id": chapter_obj_id
     })
-    
-    if existing_progress:
-        return JSONResponse(
-            status_code=status.HTTP_200_OK, 
-            content={"success": True, "message": "이미 초기화됨"}
-        )
-    
-    await db.User_Chapter_Progress.insert_one({
-        "user_id": ObjectId(user_id),
-        "chapter_id": chapter_obj_id,
-        "complete": False,
-        "complete_at": None
-    })
-    
-    # 하위 레슨 진도도 초기화
+
+    # 챕터 프로그레스가 없으면 생성
+    if not existing_progress:
+        await db.User_Chapter_Progress.insert_one({
+            "user_id": ObjectId(user_id),
+            "chapter_id": chapter_obj_id,
+            "complete": False,
+            "complete_at": None
+        })
+        message = "챕터 및 레슨 진도 초기화 완료"
+        status_code = status.HTTP_201_CREATED
+    else:
+        message = "이미 초기화된 챕터, 누락된 레슨 진도 추가 완료"
+        status_code = status.HTTP_200_OK
+
+    # 하위 레슨 진도도 누락된 것만 추가
     lessons = await db.Lessons.find({"chapter_id": chapter_obj_id}).to_list(length=None)
+    lesson_ids = [lesson["_id"] for lesson in lessons]
+    # 이미 존재하는 레슨 진도 조회
+    existing_lesson_progress = await db.User_Lesson_Progress.find({
+        "user_id": ObjectId(user_id),
+        "lesson_id": {"$in": lesson_ids}
+    }).to_list(length=None)
+    existing_lesson_ids = {p["lesson_id"] for p in existing_lesson_progress}
     progress_bulk = []
     for lesson in lessons:
-        exists = await db.User_Lesson_Progress.find_one({
-            "user_id": ObjectId(user_id),
-            "lesson_id": lesson["_id"]
-        })
-        if not exists:
+        if lesson["_id"] not in existing_lesson_ids:
             progress_bulk.append({
                 "user_id": ObjectId(user_id),
                 "lesson_id": lesson["_id"],
@@ -116,10 +120,10 @@ async def initialize_chapter_progress(
             })
     if progress_bulk:
         await db.User_Lesson_Progress.insert_many(progress_bulk)
-    
+
     return JSONResponse(
-        status_code=status.HTTP_201_CREATED, 
-        content={"success": True, "message": "챕터 및 레슨 진도 초기화 완료"}
+        status_code=status_code,
+        content={"success": True, "message": message}
     )
 
 # 레슨 이벤트 업데이트

@@ -253,24 +253,6 @@ async def get_chapter_session(
             "lesson_id": {"$in": lesson_ids}
         }).to_list(length=None)
         progress_dict = {str(p["lesson_id"]): p for p in progresses}
-        # 누락된 User_Lesson_Progress 자동 생성
-        missing = [lesson_id for lesson_id in lesson_ids if str(lesson_id) not in progress_dict]
-        if missing:
-            now = datetime.utcnow()
-            await db.User_Lesson_Progress.insert_many([
-                {
-                    "user_id": ObjectId(user_id),
-                    "lesson_id": lesson_id,
-                    "status": "not_started",
-                    "updated_at": now
-                } for lesson_id in missing
-            ])
-            # 다시 조회
-            progresses = await db.User_Lesson_Progress.find({
-                "user_id": ObjectId(user_id),
-                "lesson_id": {"$in": lesson_ids}
-            }).to_list(length=None)
-            progress_dict = {str(p["lesson_id"]): p for p in progresses}
         for progress in progresses:
             lesson_status_map[str(progress["lesson_id"])] = progress.get("status", "not_started")
     lesson_list = []
