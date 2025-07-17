@@ -9,6 +9,72 @@ from ..db.session import get_db
 from bson import ObjectId
 from collections import defaultdict
 
+# 포트풀 섹터 정의 및 관리 클래스 추가
+PORT_SECTORS = {
+    1: list(range(9001, 9026)),   # 9001~9025
+    2: list(range(9026, 9051)),   # 9026~9050
+    3: list(range(9051, 9076)),   # 9051~9075
+    4: list(range(9076, 9101)),   # 9076~9100
+}
+
+class PortPoolManager:
+    def __init__(self):
+        self.sectors = PORT_SECTORS
+        self.used_ports = set()
+        self.last_sector = 0  # 마지막으로 할당한 섹터 번호
+
+    def acquire_port(self):
+        # 현재 섹터에서 사용 가능한 포트가 있으면 그 섹터에서만 할당
+        sector_ports = self.sectors[self.last_sector if self.last_sector else 1]
+        for port in sector_ports:
+            if port not in self.used_ports:
+                self.used_ports.add(port)
+                self.last_sector = self.last_sector if self.last_sector else 1
+                return port
+        
+        # 현재 섹터가 모두 소진되면 cleanup 수행
+        from inspect import currentframe, getouterframes
+        outer = getouterframes(currentframe(), 2)
+        if not any('cleanup_dead_servers' in str(f.function) for f in outer):
+            try:
+                cleanup_dead_servers()
+            except Exception:
+                pass
+        
+        # cleanup 후 현재 섹터를 먼저 재확인 (반환된 포트가 있을 수 있음)
+        current_sector = self.last_sector if self.last_sector else 1
+        sector_ports = self.sectors[current_sector]
+        for port in sector_ports:
+            if port not in self.used_ports:
+                self.used_ports.add(port)
+                return port
+        
+        # 현재 섹터에 빈 포트가 없으면 다음 섹터로 이동
+        self.last_sector = (current_sector % 4) + 1
+        sector_ports = self.sectors[self.last_sector]
+        for port in sector_ports:
+            if port not in self.used_ports:
+                self.used_ports.add(port)
+                return port
+        
+        # 다음 섹터도 없으면 전체 섹터 재탐색
+        for i in range(1, 5):
+            if i == current_sector or i == self.last_sector:
+                continue  # 이미 확인한 섹터는 스킵
+            sector_ports = self.sectors[i]
+            for port in sector_ports:
+                if port not in self.used_ports:
+                    self.used_ports.add(port)
+                    self.last_sector = i
+                    return port
+        
+        raise Exception("모든 섹터에 사용 가능한 포트가 없습니다.")
+
+    def release_port(self, port):
+        self.used_ports.discard(port)
+
+port_pool_manager = PortPoolManager()
+
 running_models = defaultdict(list)
 import signal
 def is_server_alive_by_pid(pid):
@@ -79,16 +145,19 @@ async def deploy_model(chapter_id, db=None, use_webrtc: bool = False):
                 running_models.pop(model_id, None)
                 model_server_manager.running_servers.pop(model_id, None)
                 model_server_manager.server_processes.pop(model_id, None)
+        # 포트풀에서 포트 할당
+        port = port_pool_manager.acquire_port()
         # 모델 서버 시작
         try:
-            ws_url = await model_server_manager.start_model_server(model_id, model_data_url, True)
+            ws_url = await model_server_manager.start_model_server(model_id, model_data_url, True, port=port)
         except Exception as e:
             print(f"Failed to start model server for {model_id}: {str(e)}")
             # Continue with other models even if one fails
+            port_pool_manager.release_port(port)
             raise Exception(f"Failed to start model server for {model_id}: {str(e)}")
         ws_urls.append(ws_url)
         running_models[model_id] = ws_url
-        model_server_manager.running_servers[model_id] = ws_url
+        model_server_manager.running_servers[model_id] = port
         server_type = "WebRTC" if use_webrtc else "WebSocket"
         print(f"{server_type} model server deployed for chapter {chapter_id}: {ws_url}")
         print(f"현재 running_models: {dict(running_models)}")
