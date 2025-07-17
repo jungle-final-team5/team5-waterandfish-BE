@@ -58,9 +58,9 @@ def run_websocket_server(port: int, model_info: str, logger):
         "--port", str(port),
         "--env", model_info,
         "--log-level", "INFO",
-        "--frame-skip", "3",
+        # "--frame-skip", "3",
         "--prediction-interval", "10",
-        "--max-frame-width", "640"
+        # "--max-frame-width", "640"
     ]
     
     logger.info(f"Executing command: {' '.join(cmd)}")
