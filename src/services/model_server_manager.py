@@ -6,7 +6,8 @@ import time
 from typing import Dict, Optional
 
 from ..core.config import settings
-
+import sys
+ppath = sys.executable
 class ModelServerManager:
     
     def __init__(self):
@@ -47,7 +48,7 @@ class ModelServerManager:
             # Set the working directory to the parent of the services directory
             working_dir = os.path.dirname(os.path.dirname(__file__))
             process = subprocess.Popen([
-                "python", "-u", script_path,
+                ppath, "-u", script_path,
                 "--port", str(port),
                 "--env", model_data_url,
                 "--log-level", "INFO",
