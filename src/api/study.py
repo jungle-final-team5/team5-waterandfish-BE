@@ -258,3 +258,38 @@ async def complete_chapter_study(request: Request, db: AsyncIOMotorDatabase = De
         "chapter_current_index": current_index + 1 if updated else current_index,
         "message": "챕터 학습 완료 처리 및 다음 챕터 오픈" if updated else "이미 다음 챕터가 열려 있음"
     }
+@router.post("/sessions/complete/letter")
+async def complete_chapter_study(request: Request, db: AsyncIOMotorDatabase = Depends(get_db)):
+    """챕터 학습 완료 시 user.chapter_current_index를 +1 (중복 증가 방지)"""
+    user_id = require_auth(request)
+    data = await request.json()
+    chapter_name = data.get("lettertype")
+    if not chapter_name:
+        raise HTTPException(status_code=400, detail="chapter_id is required")
+    # try:
+    #     chapter_obj_id = ObjectId(chapter_id)
+    # except Exception:
+    #     raise HTTPException(status_code=400, detail="Invalid chapter_id")
+    chapter = await db.Chapters.find_one({"title": chapter_name})
+    if not chapter:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+    chapter_order = chapter.get("order_index", 0)
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    current_index = user.get("chapter_current_index", 0)
+    # 중복 증가 방지: 현재 인덱스와 챕터 order_index가 같을 때만 +1
+    if current_index == chapter_order:
+        await db.users.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$inc": {"chapter_current_index": 1}}
+        )
+        updated = True
+    else:
+        updated = False
+    return {
+        "success": True,
+        "updated": updated,
+        "chapter_current_index": current_index + 1 if updated else current_index,
+        "message": "챕터 학습 완료 처리 및 다음 챕터 오픈" if updated else "이미 다음 챕터가 열려 있음"
+    }
