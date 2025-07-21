@@ -38,10 +38,6 @@ class SignClassifierWebSocketServer:
         self.debug_mode = debug_mode  # 디버그 모드
         self.enable_profiling = enable_profiling  # 성능 프로파일링 모드
         
-        # TensorFlow 프로파일러 설정
-        self.profiler_log_dir = './logs'
-        self.profiler_started = False
-        
         # 종료 대기 태스크
         self.shutdown_task = None
         
@@ -172,33 +168,10 @@ class SignClassifierWebSocketServer:
             # TensorFlow 성능 최적화 설정
             tf.config.optimizer.set_jit(True)  # XLA JIT 컴파일 활성화
             
-            # 그래프 모드 활성화 (TensorFlow 2.x에서 1.x 스타일 그래프 모드 사용)
-            tf.compat.v1.disable_eager_execution()
-            logger.info("TensorFlow 그래프 모드 활성화됨")
-            
-            # 모델을 그래프 모드로 변환
-            try:
-                # 모델을 ConcreteFunction으로 변환
-                dummy_input = np.zeros((1, self.MAX_SEQ_LENGTH, 675))
-                concrete_func = tf.function(self.model.predict).get_concrete_function(
-                    tf.TensorSpec(shape=(1, self.MAX_SEQ_LENGTH, 675), dtype=tf.float32)
-                )
-                self.model_predict_fn = concrete_func
-                logger.info("모델을 그래프 모드로 변환 완료")
-            except Exception as e:
-                logger.warning(f"그래프 모드 변환 실패, 기본 모드 사용: {e}")
-                self.model_predict_fn = None
-            
             # 모델 warming up (첫 번째 예측 시 느린 속도 방지)
             dummy_input = np.zeros((1, self.MAX_SEQ_LENGTH, 675))
             _ = self.model.predict(dummy_input, verbose=0)
             logger.info("모델 warming up 완료")
-            
-            # TensorFlow 프로파일러 초기화 (프로파일링 모드가 활성화된 경우)
-            if self.enable_profiling:
-                # 프로파일 로그 디렉토리 생성
-                os.makedirs(self.profiler_log_dir, exist_ok=True)
-                logger.info(f"TensorFlow 프로파일러 로그 디렉토리: {self.profiler_log_dir}")
             
         except Exception as e:
             logger.error(f"모델 로딩 실패: {e}")
@@ -620,15 +593,6 @@ class SignClassifierWebSocketServer:
         self.client_vector_counters[client_id] += 1
         vector_count = self.client_vector_counters[client_id]
         
-        # TensorFlow 프로파일러 시작 (프로파일링 모드가 활성화된 경우)
-        if self.enable_profiling and not self.profiler_started:
-            try:
-                tf.profiler.experimental.start(self.profiler_log_dir)
-                self.profiler_started = True
-                logger.info("TensorFlow 프로파일러 시작됨")
-            except Exception as e:
-                logger.warning(f"TensorFlow 프로파일러 시작 실패: {e}")
-        
         # 이미 처리 중인 경우 스킵
         if self.client_states[client_id]["is_processing"]:
             return None
@@ -671,19 +635,9 @@ class SignClassifierWebSocketServer:
                 sequence = self.improved_preprocess_landmarks(list(self.client_sequences[client_id]))
                 preprocessing_time = time.time() - preprocessing_start
                 
-                # 5. 모델 예측 (그래프 모드 사용)
+                # 5. 모델 예측
                 prediction_start = time.time()
-                
-                # 그래프 모드 함수가 있으면 사용, 없으면 기본 모드 사용
-                if hasattr(self, 'model_predict_fn') and self.model_predict_fn is not None:
-                    # 그래프 모드로 예측
-                    input_tensor = tf.convert_to_tensor(sequence.reshape(1, *sequence.shape), dtype=tf.float32)
-                    pred_probs = self.model_predict_fn(input_tensor)
-                    pred_probs = pred_probs.numpy()  # Tensor를 numpy로 변환
-                else:
-                    # 기본 모드로 예측
-                    pred_probs = self.model.predict(sequence.reshape(1, *sequence.shape), verbose=0)
-                
+                pred_probs = self.model.predict(sequence.reshape(1, *sequence.shape), verbose=0)
                 pred_idx = np.argmax(pred_probs[0])
                 pred_label = self.ACTIONS[pred_idx]
                 confidence = float(pred_probs[0][pred_idx])
@@ -759,15 +713,6 @@ class SignClassifierWebSocketServer:
             return None
         finally:
             self.client_states[client_id]["is_processing"] = False
-            
-            # TensorFlow 프로파일러 정지 (프로파일링 모드가 활성화된 경우)
-            if self.enable_profiling and self.profiler_started and vector_count % 100 == 0:
-                try:
-                    tf.profiler.experimental.stop()
-                    self.profiler_started = False
-                    logger.info(f"TensorFlow 프로파일러 정지됨 (100벡터마다 정지)")
-                except Exception as e:
-                    logger.warning(f"TensorFlow 프로파일러 정지 실패: {e}")
     
     async def handle_client(self, websocket):
         """클라이언트 연결 처리"""
@@ -889,14 +834,6 @@ class SignClassifierWebSocketServer:
         try:
             await asyncio.sleep(20)
             if not self.clients:
-                # TensorFlow 프로파일러 정지 (프로파일링 모드가 활성화된 경우)
-                if self.enable_profiling and self.profiler_started:
-                    try:
-                        tf.profiler.experimental.stop()
-                        logger.info("TensorFlow 프로파일러 정지됨 (서버 종료)")
-                    except Exception as e:
-                        logger.warning(f"TensorFlow 프로파일러 정지 실패: {e}")
-                
                 logger.info("[WS] 20초 대기 후에도 클라이언트 없음. 서버 프로세스 종료.")
                 os._exit(0)
             else:
@@ -923,10 +860,7 @@ class SignClassifierWebSocketServer:
         logger.info(f"   - 예측 간격: {self.prediction_interval}벡터마다 예측")
         logger.info(f"   - 결과 버퍼 크기: {self.result_buffer_size}개 프레임")
         logger.info(f"   - TensorFlow XLA JIT: 활성화")
-        logger.info(f"   - TensorFlow Graph Mode: 활성화")
         logger.info(f"   - Performance profiling: {self.enable_profiling}")
-        if self.enable_profiling:
-            logger.info(f"   - TensorFlow Profiler: 활성화 (로그 디렉토리: {self.profiler_log_dir})")
         logger.info(f"벡터 처리 모드 - JSON 랜드마크 데이터만 지원")
         logger.info(f"결과 버퍼링 모드 - {self.result_buffer_size}개 프레임의 분류 결과를 평균화하여 전송")
         logger.info(f"Starting server with optimized settings...")
@@ -1015,10 +949,7 @@ def main():
         print(f"Performance settings:")
         print(f"   - Prediction interval: {prediction_interval}")
         print(f"   - Result buffer size: {result_buffer_size}")
-        print(f"   - TensorFlow Graph Mode: Enabled")
         print(f"   - Performance profiling: {enable_profiling}")
-        if enable_profiling:
-            print(f"   - TensorFlow Profiler: Enabled (log directory: ./logs)")
         print(f"Vector processing mode - MediaPipe processing moved to frontend")
         print(f"Starting server with optimized vector processing...")
     
@@ -1075,15 +1006,6 @@ def main():
         logger.info("   - 랜드마크 데이터 유효성 검사 결과")
         logger.info("   - 클라이언트별 상세 처리 정보")
         logger.info("   - 분류 결과 버퍼링 정보")
-    
-    # 프로파일링 모드 활성화 시 알림
-    if enable_profiling:
-        logger.info("TensorFlow 프로파일링 모드 활성화:")
-        logger.info("   - TensorFlow Profiler가 실시간 추론 성능을 분석합니다")
-        logger.info("   - 프로파일 로그는 ./logs 디렉토리에 저장됩니다")
-        logger.info("   - 100벡터마다 프로파일러가 정지되어 로그가 생성됩니다")
-        logger.info("   - TensorBoard로 프로파일 결과를 시각화할 수 있습니다")
-        logger.info("   - 명령어: tensorboard --logdir=./logs")
     
     asyncio.run(server.run_server())
 

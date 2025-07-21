@@ -39,11 +39,11 @@ class ModelServerManager:
                 ppath, "-u", script_path,
                 "--port", str(port),
                 "--env", model_data_url,
-                "--log-level", "INFO",
+                "--log-level", "OFF",
                 # "--host", "0.0.0.0", #외부에서 접근 가능하게 바인딩 해야함
                 # "--debug-video",
                 # "--accuracy-mode",
-                "--profile", # 프로파일링 모드 활성화
+                # "--enable-profiling",
             ],
             env=env,
             stdout=subprocess.PIPE,
