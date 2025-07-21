@@ -172,23 +172,6 @@ class SignClassifierWebSocketServer:
             # TensorFlow 성능 최적화 설정
             tf.config.optimizer.set_jit(True)  # XLA JIT 컴파일 활성화
             
-            # 그래프 모드 활성화 (TensorFlow 2.x에서 1.x 스타일 그래프 모드 사용)
-            tf.compat.v1.disable_eager_execution()
-            logger.info("TensorFlow 그래프 모드 활성화됨")
-            
-            # 모델을 그래프 모드로 변환
-            try:
-                # 모델을 ConcreteFunction으로 변환
-                dummy_input = np.zeros((1, self.MAX_SEQ_LENGTH, 675))
-                concrete_func = tf.function(self.model.predict).get_concrete_function(
-                    tf.TensorSpec(shape=(1, self.MAX_SEQ_LENGTH, 675), dtype=tf.float32)
-                )
-                self.model_predict_fn = concrete_func
-                logger.info("모델을 그래프 모드로 변환 완료")
-            except Exception as e:
-                logger.warning(f"그래프 모드 변환 실패, 기본 모드 사용: {e}")
-                self.model_predict_fn = None
-            
             # 모델 warming up (첫 번째 예측 시 느린 속도 방지)
             dummy_input = np.zeros((1, self.MAX_SEQ_LENGTH, 675))
             _ = self.model.predict(dummy_input, verbose=0)
@@ -671,19 +654,9 @@ class SignClassifierWebSocketServer:
                 sequence = self.improved_preprocess_landmarks(list(self.client_sequences[client_id]))
                 preprocessing_time = time.time() - preprocessing_start
                 
-                # 5. 모델 예측 (그래프 모드 사용)
+                # 5. 모델 예측
                 prediction_start = time.time()
-                
-                # 그래프 모드 함수가 있으면 사용, 없으면 기본 모드 사용
-                if hasattr(self, 'model_predict_fn') and self.model_predict_fn is not None:
-                    # 그래프 모드로 예측
-                    input_tensor = tf.convert_to_tensor(sequence.reshape(1, *sequence.shape), dtype=tf.float32)
-                    pred_probs = self.model_predict_fn(input_tensor)
-                    pred_probs = pred_probs.numpy()  # Tensor를 numpy로 변환
-                else:
-                    # 기본 모드로 예측
-                    pred_probs = self.model.predict(sequence.reshape(1, *sequence.shape), verbose=0)
-                
+                pred_probs = self.model.predict(sequence.reshape(1, *sequence.shape), verbose=0)
                 pred_idx = np.argmax(pred_probs[0])
                 pred_label = self.ACTIONS[pred_idx]
                 confidence = float(pred_probs[0][pred_idx])
@@ -923,7 +896,6 @@ class SignClassifierWebSocketServer:
         logger.info(f"   - 예측 간격: {self.prediction_interval}벡터마다 예측")
         logger.info(f"   - 결과 버퍼 크기: {self.result_buffer_size}개 프레임")
         logger.info(f"   - TensorFlow XLA JIT: 활성화")
-        logger.info(f"   - TensorFlow Graph Mode: 활성화")
         logger.info(f"   - Performance profiling: {self.enable_profiling}")
         if self.enable_profiling:
             logger.info(f"   - TensorFlow Profiler: 활성화 (로그 디렉토리: {self.profiler_log_dir})")
@@ -1015,7 +987,6 @@ def main():
         print(f"Performance settings:")
         print(f"   - Prediction interval: {prediction_interval}")
         print(f"   - Result buffer size: {result_buffer_size}")
-        print(f"   - TensorFlow Graph Mode: Enabled")
         print(f"   - Performance profiling: {enable_profiling}")
         if enable_profiling:
             print(f"   - TensorFlow Profiler: Enabled (log directory: ./logs)")
