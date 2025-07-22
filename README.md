@@ -22,7 +22,7 @@
 ```
 team5-waterandfish-BE/
 ├── src/
-│   ├── api/           # API 라우터 (auth, categories, chapters, lessons, animation, quiz, test, review 등)
+│   ├── api/           # API 라우터 (auth, chapters, lessons, animation, quiz, test 등)
 │   ├── core/          # 설정, 인증, 환경변수 관리
 │   ├── db/            # MongoDB 연결, 세션 관리
 │   ├── models/        # Pydantic 모델
@@ -41,12 +41,10 @@ team5-waterandfish-BE/
   - attendance.py: 출석 체크 관리
   - auth.py: 인증/인가 처리
   - badge.py: 사용자 뱃지 시스템
-  - categories.py: 학습 카테고리 관리
   - chapters.py: 학습 챕터 관리
   - lessons.py: 개별 레슨 관리
   - ml.py: 머신러닝 서비스 연동
   - quiz.py: 퀴즈 시스템
-  - review.py: 학습 리뷰 시스템
   - search.py: 검색 기능
   - test.py: 테스트 시스템
   - video_upload.py: 동영상 업로드 처리
@@ -54,6 +52,7 @@ team5-waterandfish-BE/
   - sign_classifier_websocket_server.py: 수어 인식 WebSocket 서버
   - embedding.py: 텍스트 임베딩 서비스
   - ml_service.py: ML 모델 관리 서비스
+  - model_server_manager.py: 수어 인식 WebSocket 서버 실행
   - s3_utils.py: AWS S3 연동 유틸리티
 - **scripts/**: 서버 관리, 배포, 모니터링, 데이터 백필 등 자동화 스크립트
 - **config/**: WebSocket 서버 등 환경설정 JSON/템플릿
@@ -123,23 +122,16 @@ team5-waterandfish-BE/
 | /auth/google | GET | Google OAuth 시작 | ❌ |
 | /auth/kakao | GET | Kakao OAuth 시작 | ❌ |
 | /auth/{provider}/callback | POST | OAuth 콜백 처리 | ❌ |
-| /category | GET | 모든 카테고리 조회 | ❌ |
-| /category/{category_id}/chapters | GET | 특정 카테고리의 챕터 조회 | ❌ |
 | /anim/{lesson_id} | GET | 레슨 애니메이션 조회 (WebM) | ❌ |
-| /learn/word/{word_id} | GET | 특정 단어 레슨 조회 | ❌ |
-| /learn/chapter/{chapter_id} | GET | 챕터 학습 세션 조회 | ⭕ |
-| /learn/chapter/{chapter_id}/guide | GET | 챕터 학습 가이드 조회 | ❌ |
+| /chapters/{chapter_id} | GET | 챕터 학습 세션 조회 | ⭕ |
+| /chapters/{chapter_id}/guide | GET | 챕터 학습 가이드 조회 | ❌ |
 | /quiz/chapter/{chapter_id} | GET | 챕터 퀴즈 조회 | ⭕ |
-| /quiz/chapter/{chapter_id}/review | GET | 챕터 퀴즈 리뷰 조회 | ⭕ |
 | /quiz/chapter/{chapter_id}/submit | POST | 퀴즈 결과 제출 | ⭕ |
 | /test | GET | 테스트 페이지 조회 | ❌ |
 | /test/letter/{set_type}/{q_or_s} | GET | 글자 테스트 조회 | ⭕ |
 | /test/letter/{set_type}/submit | POST | 글자 테스트 결과 제출 | ⭕ |
-| /review | GET | 리뷰 페이지 조회 | ⭕ |
-| /review/mark-reviewed | POST | 리뷰 완료 표시 | ⭕ |
-| /review/stats | GET | 리뷰 통계 조회 | ⭕ |
 | /badge/check-badges | POST | 뱃지 획득 조건 확인 | ⭕ |
-| /video_upload | POST | 동영상 업로드 | ⭕ |
+| /video_upload | POST | 동영상 업로드 | ❌ |
 | ... | ... | ... | ... |
 
 - ⭕: 인증 필요, ❌: 비로그인 접근 가능
@@ -159,9 +151,6 @@ team5-waterandfish-BE/
 # 로그인
 curl -X POST http://localhost:8000/auth/signin -H "Content-Type: application/json" -d '{"email":"test@test.com","password":"1234"}'
 
-# 카테고리 조회
-curl http://localhost:8000/category
-
 # 애니메이션 조회 (WebM)
 curl -o animation.webm http://localhost:8000/anim/60f1a5b3e4b0a1b2c3d4e5f6
 ```
@@ -171,10 +160,10 @@ curl -o animation.webm http://localhost:8000/anim/60f1a5b3e4b0a1b2c3d4e5f6
 ## 🎯 주요 기능 상세
 
 - **사용자 인증**: 이메일/비밀번호, Google/Kakao 소셜 로그인, JWT 토큰 기반 인증/인가
-- **카테고리/챕터/레슨**: 계층적 수어 학습 구조, MongoDB 기반 데이터 관리
-- **학습/퀴즈/진도**: 단어/챕터별 학습, 퀴즈, 진도/진행률 관리, 오답노트/리뷰
+- **챕터/레슨**: 계층적 수어 학습 구조, MongoDB 기반 데이터 관리
+- **학습/퀴즈/진도**: 단어/챕터별 학습, 퀴즈, 진도/진행률 관리
 - **출석/뱃지/동기부여**: 출석 체크, 뱃지 시스템, streak, 통계 등
-- **추천/ML 연동**: 인기 수어 추천, ML 모델(WebSocket) 연동, 실시간 수어 인식
+- **ML 연동**: ML 모델(WebSocket) 연동, 실시간 수어 인식
 - **애니메이션 스트리밍**: WebM 형식 수어 애니메이션 스트리밍 제공
 - **운영/모니터링**: WebSocket 서버 관리, 배포/모니터링 스크립트, 서비스 헬스체크
 - **테스트**: pytest 기반 단위/통합 테스트, 테스트용 DB 세팅 지원
@@ -194,7 +183,7 @@ curl -o animation.webm http://localhost:8000/anim/60f1a5b3e4b0a1b2c3d4e5f6
 - **AWS S3**: 미디어 파일 저장소
 
 ### 프론트엔드 (별도 저장소)
-- **React 18, TypeScript, React Router v6, Axios, Tailwind CSS**
+- **React 18, Vite, TypeScript, React Router v6, Axios, Tailwind CSS**
 
 ### 기타
 - **Docker**: 컨테이너 배포
@@ -203,10 +192,11 @@ curl -o animation.webm http://localhost:8000/anim/60f1a5b3e4b0a1b2c3d4e5f6
 
 ### 아키텍처 개요
 - FastAPI(REST) ↔ MongoDB
-- FastAPI ↔ WebSocket ML 서버
+- FastAPI → WebSocket ML 서버
 - FastAPI ↔ S3 등 외부 서비스
 - 프론트엔드(React) ↔ FastAPI
 - 클라이언트 ↔ WebM 스트리밍
+- 클라이언트 ↔ 수어 인식 websocket 서버
 
 ---
 
@@ -216,7 +206,7 @@ curl -o animation.webm http://localhost:8000/anim/60f1a5b3e4b0a1b2c3d4e5f6
 - **운영/모니터링**: `scripts/` 내 `monitor_websocket_services.sh`, `check_websocket_servers.sh` 등 활용
 - **배포**: `build.sh`, Dockerfile, config/websocket_servers.json 등 참고
 - **DB 초기화/백필**: `src/scripts/backfill_embeddings.py`, `seed_embeddings.py` 등
-- **성능 최적화**: 캐싱, Job Queue 도입 고려 중 (Redis/Celery)
+- **성능 최적화**: 랜드마크 시퀸스로 수어인식 처리
 
 ---
 
