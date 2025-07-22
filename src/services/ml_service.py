@@ -1,6 +1,7 @@
 import os
 import subprocess
 import threading
+import queue
 import asyncio
 # model_server_manager.running_servers: model_id(str) -> ws_url(str)
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
@@ -12,9 +13,36 @@ from collections import defaultdict
 from bson import ObjectId
 import re
 
-# 동시성 제어를 위한 락들 (종료 우선순위)
-models_lock = threading.Lock()
-shutdown_lock = threading.Lock()  # 종료 작업 전용 락 (우선순위 높음)
+# 우선순위 락 구현 (PriorityLock)
+class PriorityLock:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._waiters = queue.PriorityQueue()
+        self._cond = threading.Condition()
+
+    def acquire(self, priority=0):
+        with self._cond:
+            self._waiters.put(priority)
+            while self._waiters.queue[0] != priority or not self._lock.acquire(blocking=False):
+                self._cond.wait()
+            self._waiters.get()
+            self._cond.notify_all()
+
+    def release(self):
+        with self._cond:
+            self._lock.release()
+            self._cond.notify_all()
+
+# 동시성 제어를 위한 우선순위 락들 (종료 작업이 더 높은 우선순위)
+models_lock = PriorityLock()
+shutdown_lock = PriorityLock()  # 종료 작업 전용 락 (priority=0: 높음, priority=1: 낮음)
+
+# 사용 예시:
+# shutdown_lock.acquire(priority=0)  # 종료 작업(높은 우선순위)
+# models_lock.acquire(priority=1)    # 일반 작업(낮은 우선순위)
+# ...
+# models_lock.release()
+# shutdown_lock.release()
 # 종료 중인 모델들을 추적
 shutting_down_models = set()
 
@@ -67,9 +95,11 @@ def is_server_alive_by_pid(pid):
 
     # 관리 객체에서 죽은 서버 정보 정리
 def cleanup_dead_servers():
-    # 종료 작업 진행 중이면 잠시 대기
-    with shutdown_lock:
-        with models_lock:
+    # 종료 작업: 우선순위 0 (가장 높음)
+    shutdown_lock.acquire(priority=0)
+    try:
+        models_lock.acquire(priority=1)
+        try:
             dead_ids = []
             for model_id, process in list(model_server_manager.server_processes.items()):
                 # 종료 중인 모델은 정리 대상에서 제외 (종료 작업이 처리)
@@ -84,6 +114,10 @@ def cleanup_dead_servers():
                 model_server_manager.server_processes.pop(model_id, None)
                 # 포트 회수
                 release_port(model_id)
+        finally:
+            models_lock.release()
+    finally:
+        shutdown_lock.release()
 
 async def deploy_model(chapter_id, db=None):
     """챕터에 해당하는 모델 서버를 배포"""
@@ -110,16 +144,22 @@ async def deploy_model(chapter_id, db=None):
 
         # 1단계: 종료 중인지 먼저 확인 (우선순위 존중)
         shutdown_in_progress = False
-        with shutdown_lock:  # 종료 작업이 진행 중인지 확인
-            with models_lock:
+        shutdown_lock.acquire(priority=1)  # 생성 작업은 낮은 우선순위
+        try:
+            models_lock.acquire(priority=1)
+            try:
                 if model_id in shutting_down_models:
                     print(f"Model server {model_id} is shutting down, will start new one")
                     shutdown_in_progress = True
+            finally:
+                models_lock.release()
+        finally:
+            shutdown_lock.release()
 
         # 2단계: 종료 중이 아니라면 일반적인 상태 확인
         if not shutdown_in_progress:
-            # 락으로 동시성 제어 (종료 작업이 끼어들 수 있음)
-            with models_lock:
+            models_lock.acquire(priority=1)
+            try:
                 # 직접 프로세스 상태 확인
                 process = model_server_manager.server_processes.get(model_id)
                 pid = process.pid if process else None
@@ -139,13 +179,21 @@ async def deploy_model(chapter_id, db=None):
                         print(f"Model server for {model_id} is not alive. Restarting...")
                         model_server_manager.running_servers.pop(model_id, None)
                         model_server_manager.server_processes.pop(model_id, None)
+            finally:
+                models_lock.release()
 
         # 3단계: 서버 시작 전에 다시 한번 종료 상태 확인
-        with shutdown_lock:  # 종료 작업이 시작되지 않았는지 최종 확인
-            with models_lock:
+        shutdown_lock.acquire(priority=1)
+        try:
+            models_lock.acquire(priority=1)
+            try:
                 if model_id in shutting_down_models:
                     print(f"Model server {model_id} shutdown detected during startup, skipping...")
                     continue
+            finally:
+                models_lock.release()
+        finally:
+            shutdown_lock.release()
 
         # 4단계: 포트 할당 및 모델 서버 시작 (락 외부에서 실행)
         port = allocate_port(model_id)
@@ -157,7 +205,8 @@ async def deploy_model(chapter_id, db=None):
             raise Exception(f"Failed to start model server for {model_id}: {str(e)}")
 
         # 5단계: 결과 저장 (종료 작업과 충돌하지 않도록)
-        with models_lock:
+        models_lock.acquire(priority=1)
+        try:
             # 시작 완료 후에도 종료되지 않았는지 확인
             if model_id not in shutting_down_models:
                 ws_urls.append(ws_url)
@@ -165,6 +214,8 @@ async def deploy_model(chapter_id, db=None):
             else:
                 print(f"Model server {model_id} was shut down during startup, not registering")
                 release_port(model_id)
+        finally:
+            models_lock.release()
         print(f"model server deployed for chapter {chapter_id}: {ws_url}")
         print(f"현재 model_server_manager.running_servers: {dict(model_server_manager.running_servers)}")
         print(f"현재 model_server_manager.server_processes: {{k: v.pid if v else None for k, v in model_server_manager.server_processes.items()}}")
@@ -189,8 +240,9 @@ async def deploy_lesson_model(lesson_id, db=None):
         raise Exception(f"Lesson {lesson_id} does not have a model_data_url")
     model_id = model_data_url
     
-    # 락으로 동시성 제어
-    with models_lock:
+    # 락으로 동시성 제어 (생성 작업: 낮은 우선순위)
+    models_lock.acquire(priority=1)
+    try:
         if model_id in model_server_manager.running_servers:
             # 서버가 실제로 살아있는지 확인
             process = model_server_manager.server_processes.get(model_id)
@@ -205,6 +257,8 @@ async def deploy_lesson_model(lesson_id, db=None):
                 ws_url = None
         else:
             ws_url = None
+    finally:
+        models_lock.release()
 
     # 서버가 없으면 새로 시작 (락 외부에서 실행)
     if ws_url is None:
@@ -214,6 +268,9 @@ async def deploy_lesson_model(lesson_id, db=None):
         except Exception as e:
             release_port(model_id)
             raise
-        with models_lock:
+        models_lock.acquire(priority=1)
+        try:
             model_server_manager.running_servers[model_id] = ws_url
+        finally:
+            models_lock.release()
     return ws_url
