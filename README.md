@@ -151,9 +151,6 @@ team5-waterandfish-BE/
 # 로그인
 curl -X POST http://localhost:8000/auth/signin -H "Content-Type: application/json" -d '{"email":"test@test.com","password":"1234"}'
 
-# 카테고리 조회
-curl http://localhost:8000/category
-
 # 애니메이션 조회 (WebM)
 curl -o animation.webm http://localhost:8000/anim/60f1a5b3e4b0a1b2c3d4e5f6
 ```
