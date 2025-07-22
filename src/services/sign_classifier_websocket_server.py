@@ -1,20 +1,16 @@
 # OpenCV 제거 - 이미지 처리는 프론트엔드에서 처리
 # import cv2
-# DB 연동을 위한 motor import
 import numpy as np
 # MediaPipe 제거 - 프론트엔드에서 처리
 # import mediapipe as mp
 import tensorflow as tf
 import json
-# DB 연동을 위한 motor import
 import sys
 import os
 import asyncio
 import websockets
 import logging
 from collections import deque
-from motor.motor_asyncio import AsyncIOMotorClient
-from bson import ObjectId
 # PIL, base64, io 제거 - 이미지 처리 불필요
 # from PIL import ImageFont, ImageDraw, Image
 # import base64
@@ -34,10 +30,7 @@ from s3_utils import s3_utils
 logger = logging.getLogger(__name__)
 
 class SignClassifierWebSocketServer:
-    # DB 클라이언트는 클래스 변수로 (프로세스 내 공유)
-    _db_client = None
-    _db = None
-    def __init__(self, model_info_url, host, port, debug_mode=False, prediction_interval=5, enable_profiling=False, result_buffer_size=15, mongodb_url=None, database_name=None):
+    def __init__(self, model_info_url, host, port, debug_mode=False, prediction_interval=5, enable_profiling=False, result_buffer_size=15):
         """수어 분류 WebSocket 서버 초기화 (벡터 데이터 처리용)"""
         self.host = host
         self.port = port
@@ -66,19 +59,6 @@ class SignClassifierWebSocketServer:
         self.model_info = self.load_model_info(model_info_url)
         if not self.model_info:
             raise ValueError("모델 정보를 로드할 수 없습니다.")
-        
-        # validation용 모델 식별자 저장
-        self.model_info_url = model_info_url  # 원본 URL 저장
-
-        # DB 연결 설정 (최초 1회만)
-        if SignClassifierWebSocketServer._db_client is None:
-            # 환경변수 또는 인자에서 MongoDB 정보 사용
-            if mongodb_url is None:
-                mongodb_url = os.environ.get("MONGODB_URL", "mongodb://localhost:27017")
-            if database_name is None:
-                database_name = os.environ.get("DATABASE_NAME", "waterandfish")
-            SignClassifierWebSocketServer._db_client = AsyncIOMotorClient(mongodb_url)
-            SignClassifierWebSocketServer._db = SignClassifierWebSocketServer._db_client[database_name]
         
         # 설정값
         self.MAX_SEQ_LENGTH = self.model_info["input_shape"][0]
@@ -734,72 +714,6 @@ class SignClassifierWebSocketServer:
         finally:
             self.client_states[client_id]["is_processing"] = False
     
-
-    async def validate_model_by_lesson_id(self, lesson_id):
-        """lesson_id로 DB에서 lesson을 조회하여 model_info_url을 비교 (경로 접두어 무시)"""
-        try:
-            db = SignClassifierWebSocketServer._db
-            obj_id = ObjectId(lesson_id)
-            lesson = await db.Lessons.find_one({"_id": obj_id})
-            if not lesson:
-                return {
-                    "valid": False,
-                    "message": "해당 lesson_id에 대한 레슨을 찾을 수 없습니다.",
-                    "server_model_info_url": self.model_info_url,
-                    "server_host": self.host,
-                    "server_port": self.port
-                }
-            # model_data_url 또는 modelInfo 필드 확인
-            lesson_model_info_url = lesson.get("model_data_url") or lesson.get("modelInfo")
-            if not lesson_model_info_url:
-                return {
-                    "valid": False,
-                    "message": "레슨에 model_info_url 정보가 없습니다.",
-                    "server_model_info_url": self.model_info_url,
-                    "server_host": self.host,
-                    "server_port": self.port
-                }
-            # 파일명만 추출 (s3://waterandfish-s3/model-info/ 접두어 제거)
-            def extract_filename(url):
-                if url is None:
-                    return None
-                if url.startswith("s3://waterandfish-s3/model-info/"):
-                    return url.split("s3://waterandfish-s3/model-info/")[-1]
-                return os.path.basename(url)
-
-            lesson_filename = extract_filename(lesson_model_info_url)
-            server_filename = extract_filename(self.model_info_url)
-
-            if lesson_filename == server_filename:
-                return {
-                    "valid": True,
-                    "message": "모델이 일치합니다.",
-                    "server_model_info_url": self.model_info_url,
-                    "server_host": self.host,
-                    "server_port": self.port,
-                    "model_labels": self.ACTIONS,
-                    "model_path": self.model_info.get("model_path", ""),
-                    "input_shape": self.model_info.get("input_shape", [])
-                }
-            else:
-                return {
-                    "valid": False,
-                    "message": "요청된 lesson의 모델과 서버의 모델이 일치하지 않습니다.",
-                    "lesson_model_info_url": lesson_model_info_url,
-                    "server_model_info_url": self.model_info_url,
-                    "server_host": self.host,
-                    "server_port": self.port
-                }
-        except Exception as e:
-            logger.error(f"lesson_id 기반 모델 검증 중 오류: {e}")
-            return {
-                "valid": False,
-                "message": f"lesson_id 기반 모델 검증 중 오류가 발생했습니다: {str(e)}",
-                "server_model_info_url": self.model_info_url,
-                "server_host": self.host,
-                "server_port": self.port
-            }
-    
     async def handle_client(self, websocket):
         """클라이언트 연결 처리"""
         client_id = self.get_client_id(websocket)
@@ -814,7 +728,7 @@ class SignClassifierWebSocketServer:
             self.shutdown_task = None
 
         logger.info(f"[WS] 클라이언트 연결됨: {client_id}")
-        logger.info(f"[WS] 기대 메시지 포맷: JSON with 'type': 'landmarks', 'landmarks_sequence', 'validation', or 'ping'")
+        logger.info(f"[WS] 기대 메시지 포맷: JSON with 'type': 'landmarks' or 'landmarks_sequence'")
 
         try:
             async for message in websocket:
@@ -878,34 +792,6 @@ class SignClassifierWebSocketServer:
 
                     elif data.get("type") == "ping":
                         await websocket.send(json.dumps({"type": "pong"}))
-                    
-                    elif data.get("type") == "validation":
-                        # lesson_id 기반 모델 검증 요청 처리
-                        lesson_id = data.get("lesson_id")
-                        if lesson_id:
-                            logger.info(f"[WS] [{client_id}] lesson_id 기반 모델 검증 요청: {lesson_id}")
-                            validation_result = await self.validate_model_by_lesson_id(lesson_id)
-                            response = {
-                                "type": "validation_result",
-                                "data": validation_result,
-                                "timestamp": asyncio.get_event_loop().time(),
-                                "client_id": client_id
-                            }
-                            logger.info(f"[WS] [{client_id}] 모델 검증 결과: {validation_result['valid']}")
-                            await websocket.send(json.dumps(response))
-                        else:
-                            await websocket.send(json.dumps({
-                                "type": "validation_result",
-                                "data": {
-                                    "valid": False,
-                                    "message": "lesson_id가 누락되었습니다.",
-                                    "server_model_info_url": self.model_info_url,
-                                    "server_host": self.host,
-                                    "server_port": self.port
-                                },
-                                "timestamp": asyncio.get_event_loop().time(),
-                                "client_id": client_id
-                            }))
 
                     else:
                         logger.warning(f"[WS] [{client_id}] 알 수 없는 메시지 타입: {data.get('type')}")
@@ -977,8 +863,6 @@ class SignClassifierWebSocketServer:
         logger.info(f"   - Performance profiling: {self.enable_profiling}")
         logger.info(f"벡터 처리 모드 - JSON 랜드마크 데이터만 지원")
         logger.info(f"결과 버퍼링 모드 - {self.result_buffer_size}개 프레임의 분류 결과를 평균화하여 전송")
-        logger.info(f"모델 검증 기능 활성화 - 클라이언트가 'validation' 메시지로 모델 일치 여부 확인 가능")
-        logger.info(f"현재 서버 모델: {self.model_info_url}")
         logger.info(f"Starting server with optimized settings...")
         
         try:
