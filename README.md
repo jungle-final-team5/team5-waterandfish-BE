@@ -1,4 +1,5 @@
-# 수어지교 (Team5 Water and Fish)
+#<img width="752" height="1061" alt="스크린샷 2025-07-29 오후 9 51 25" src="https://github.com/user-attachments/assets/c4ef648a-1270-47c8-95de-9d622a72ff3b" />
+ 수어지교 (Team5 Water and Fish)
 
 손끝에서 시작되는 인연 - 수어 학습 및 커뮤니티 플랫폼
 
